@@ -1,0 +1,442 @@
+---
+title: "jonson"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Kütüphaneler
+
+```{r message=FALSE, warning=FALSE}
+library(tidytext)
+library(dplyr)
+library(tidyverse) 
+library(gutenbergr) # Eserleri içerir
+library(tidyr)  # Düzenli veri oluşturma
+library(stopwords) # İstenmeyen kelimeleri çıkartma
+library(ggplot2)  # Görselleştirme
+library(wordcloud) # Kelime Bulutu
+library(igraph)  # Ağları analiz etme
+library(ggraph) # Katmanlı ağ görselleştirmesi
+library(reshape2) # Matris dönüşümü
+```
+Gerekli kütüphaneleri indirdik.
+
+```{r message=FALSE, warning=FALSE}
+epicoene <- gutenberg_download((4011), meta_fields = "title")
+```
+Gutenberg kütüphanesinden analizini yapmak üzere 4011 kitap numarasına sahip Ben Jonson'un Epicoene Sessiz Kadınlar adlı eserini indiriyoruz.
+
+
+## Duraklama Kelimeleri
+
+```{r}
+mystopwords <- tibble(word = c("ı","la","ıt","ın","thou","ı'll","ay","thy"))
+```
+
+```{r message=FALSE, warning=FALSE}
+tidy_epicoene <- epicoene %>%
+  unnest_tokens(word, text) %>%
+   anti_join(stop_words) %>%
+   anti_join(mystopwords)
+```
+İlk olarak unnest_tokens ile eseri yani verimizi, her satırda tek bir kelime olacak şekilde böldük.Sonrasında ise stop_words ile duraklama kelimeleri olarak adlandırılan the,of,to gibi kelimeleri eledik. Ancak bu işlem, tüm duraklama kelimelerini elemek için yeterli olmadı.Bu sebeple kendi duraklama kelimelerimizi mystopwords şeklinde oluşturarak eserden eledik.
+
+## En Çok Kullanılan Kelimeler
+
+```{r}
+tidy_epicoene %>%
+  count(word, sort = TRUE)
+```
+En çok kullanılan kelimeleri, kelime sıklığına göre sırasıyla görmekteyiz.İlk 20 kelimeyi inceleyelim.
+
+## Kelime Kullanılma Sıklığı Histogram
+
+```{r message=FALSE, warning=FALSE}
+tidy <- epicoene %>%
+  unnest_tokens(word,text) %>%
+  count(word,sort=T) %>%
+  anti_join(stop_words) %>%
+  anti_join(mystopwords) %>%
+  filter(!word %in% stop_words$word,     
+
+         str_detect(word, "[a-z]"))
+```
+
+```{r}
+tidy %>% 
+  head(20)%>%
+  ggplot(aes(reorder(word,n),n))+ 
+  geom_col(fill= "purple")+
+  coord_flip()+
+  labs(x="kelimeler",
+       y="Kelime Sayısı",
+       title= "The Merchant of Venice")
+```
+En çok kullanılan ilk 20 kelimeye baktığımızda mor,daup,john,daw,hau,epi,ott gibi kelimelerin eserdeki karakterler olduğunu söyleyebiliriz.Kelimeleri daha geniş çaplı incelediğimizde mor'un Morose kişisini, daup'un Dauphine kişisini ve diğer kişilerin isimlerinin de en sık kullanılan kelimelerde kısaltılmış hallerini temsil ettiğini görebilmekteyiz.Daw, şafak anlamına gelirken bunun bir karakter olduğunu anlamak için geniş çaplı bir analiz şarttır.Bunun dışında sir, master gibi kelimelerin de sık kullanıldığını görüyoruz.Bu da bize kahramanlar arası bir hiyerarşi olduğunu gösterir.Ayrıca lady,ladies,gentlemen gibi kelimelerden de kelime sıklık sıralamasına göre eserde kadınların ön planda olduğunu söyleyebiliriz.
+
+
+## Duygu Analizi
+
+## Nrc
+
+```{r message=FALSE, warning=FALSE}
+tidy %>% 
+  inner_join(get_sentiments("nrc"))
+```
+Metindeki düşünce veya duyguyu değerlendirmek için var olan çeşitli yöntemler ve sözlükler vardır. Bu sözlüklerden biri olan nrc, duyguyu olumlu,olumsuz,sevinç,üzüntü,öfke vb şekilde ayırarak numaralandırır.
+
+```{r message=FALSE, warning=FALSE}
+tidy %>% 
+  inner_join(get_sentiments("nrc")) %>%
+  ggplot(aes(sentiment, n, fill= sentiment))+
+  geom_col()
+```
+Grafiğe baktığımızda, esere genel olarak pozitif bir duygunun hakim olduğunu görmekteyiz.Karşılıklı güvenilir ilişkiler de söz konusudur.
+Bunun yanı sıra öfke,beklenti,iğrenme,korku,üzüntü,sevinç gibi duygular da eserde yerini almıştır.Duyguların çoğunluğu negatif olmasına karşın bu sözlükte pozitif bir sonuç elde ettik.Şimdi bir de bing sözlüğünü inceleyelim.
+
+## AFİNN
+
+```{r}
+AFINN <- get_sentiments("afinn")
+AFINN
+```
+AFİNN sözlüğü, kelimeleri duygu yoğunluğuna göre -4 ila 4 arasında numaralandırır.
+
+
+## Bing
+
+```{r message=FALSE, warning=FALSE}
+tidy %>% 
+  inner_join(get_sentiments("bing"))
+```
+Bing sözlüğünde ise analizin, duyguları pozitif ve negatif şekilde ayırmaya yönelik yapıldığını görüyoruz.
+
+```{r message=FALSE, warning=FALSE}
+tidy %>% 
+  inner_join(get_sentiments("bing")) %>%
+  ggplot(aes(sentiment, n, fill= sentiment))+
+  geom_col()
+```
+Grafiğe baktığımızda bu analizde nrc sözlüğünün aksine eserde negatif bir duygu yoğunluğunun olduğunu net bir şekilde görmekteyiz.
+
+```{r message=FALSE, warning=FALSE}
+rbind(
+  
+tidy %>% 
+  inner_join(get_sentiments("bing")) %>%
+  arrange(-n) %>%
+  filter(sentiment == "positive") %>%
+  head(20),
+
+tidy %>% 
+  inner_join(get_sentiments("bing")) %>%
+  arrange(-n) %>%
+  filter(sentiment == "negative") %>%
+  head(20)) %>%
+  ggplot(aes(reorder(word,n),n, fill=sentiment)) +
+  geom_col(show.legend = FALSE)+
+  facet_wrap(~sentiment,scales = "free_y") +
+  coord_flip() +
+  labs( x = "Kelimeler" , y = "Frekanslar" , title = "Epicoene;or,The Silent Woman Duygu Analizi" , caption = "Bing Sözlüğüne Göre Duygu Analizi" )
+```
+Bing sözlüğüne göre negatif ve pozitif duyguları detaylı incelediğimizde negatif duygularda ilk sıralarda arsa,yıpranmış kelimelerini görürken sonlara doğru protesto,hile,darbe gibi kelimeleri görmekteyiz.Bu kelimelerden; eserde arsa, miras sorunları olduğunu ve bu sorunların hile,darbe gibi kelimelerden yola çıkarak yakın çevre arası sorun ve çeşitli kötü oyunlara sebebiyet verdiğini söyleyebiliriz.Pozitif duygulara baktığımızda da altın,güven,servet,değer gibi kelimelerden de bu olayın izlerini görmekteyiz.Şimdi nrc sözlüğünü öfke kelimeleri için kullanalım.
+
+
+```{r message=FALSE, warning=FALSE}
+nrc_anger <- get_sentiments("nrc") %>% 
+  filter(sentiment == "anger")
+
+tidy_epicoene %>% 
+  inner_join(nrc_anger) %>%
+  count(word, sort = TRUE)
+```
+Sonuçlara baktığımızda mahkeme,para gibi kelimeler ilk sırada yerini aldı.Buradan da arsa ile ilgili sorunun mahkeme ile bağlantılı olabileceğini söyleyebiliriz.
+
+
+## Kelime Bulutu
+
+```{r message=FALSE, warning=FALSE}
+tidy_epicoene %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100,colors=brewer.pal(8, "Dark2")))
+```
+Kelime bulutuna baktığımızda ise kelimelerin kullanım sıklığına göre boyutlarının değiştiğini görmekteyiz.İlk 100 kelimeye baktığımızda karakterlerin isimlerine dair kısaltmaları ve orjinallerini daha net görüyoruz.Bunun dışında bir evlilik ve ayrılığın olduğunu, dua etme,inanç kelimelerinden bir inanış söz konusu olduğunu söyleyebiliriz.
+
+```{r message=FALSE, warning=FALSE}
+tidy_epicoene %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray10", "gray60"),
+                   max.words = 100)
+```
+comporison.cloud fonksiyonu ile belgelerdeki sözcüklerin sıklığını karşılaştıran bir bulut oluşturduk.acast fonksiyonu ise bir veri çerçevesi oluşturmamıza yardımcı oldu.Gafikte ise kelime boyutu arttıkça kullanım sıklığının arttığını, renk tonu arttıkça ise negatif duygu durumunun arttığını söyleyebiliriz.
+
+```{r message=FALSE, warning=FALSE}
+bingnegative <- get_sentiments("bing") %>% 
+  filter(sentiment == "negative")
+
+wordcounts <- tidy_epicoene %>%
+  group_by(title, gutenberg_id) %>%
+  summarize(words = n())
+
+tidy_epicoene %>%
+  semi_join(bingnegative) %>%
+  group_by(title, gutenberg_id) %>%
+  summarize(negativewords = n()) %>%
+  left_join(wordcounts, by = c("title", "gutenberg_id")) %>%
+  mutate(ratio = negativewords/words) %>%
+  filter(gutenberg_id != 0) %>%
+  slice_max(ratio, n = 1) %>% 
+  ungroup()
+```
+### İlk olarak bing sözlüğüne göre negatif kelimeleri filtreledik.Sonrasında bölümlerin uzunluklarını normalleştirebilmemiz için her bölümde kaç kelime olduğuna dair wordcounts adında bir veri çerçevesi elde ettik.Son olarak ise her bölümdeki olumsuz kelime sayısının toplam kelimelere oranını elde ettik.Bu oran 0.08 oldu.Aynı işlemi pozitif kelimeler için de yapalım.
+
+```{r message=FALSE, warning=FALSE}
+bingpositive <- get_sentiments("bing") %>% 
+  filter(sentiment == "positive")
+
+wordcounts <- tidy_epicoene %>%
+  group_by(title, gutenberg_id) %>%
+  summarize(words = n())
+
+tidy_epicoene %>%
+  semi_join(bingpositive) %>%
+  group_by(title, gutenberg_id) %>%
+  summarize(positivewords = n()) %>%
+  left_join(wordcounts, by = c("title", "gutenberg_id")) %>%
+  mutate(ratio = positivewords/words) %>%
+  filter(gutenberg_id != 0) %>%
+  slice_max(ratio, n = 1) %>% 
+  ungroup()
+```
+Aynı işlemi pozitif kelimelerde uyguladığımızda oranın 0.06 olduğunu görüyoruz.Buradan da negatif duygunun baskın olduğu sonucuna ulaşıyoruz.
+
+
+## NGRAMLAR (n=2)
+
+```{r}
+epicoene_bigrams <- epicoene %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+epicoene_bigrams
+```
+n-gram ile n sayıda ardışık sözcük dizinini bir araya getiririz. X kelimesinin ardından Y kelimesinin ne sıklıkla geldiğini görerek, aralarındaki ilişkilerin bir modelini oluşturabiliriz. n=2 aldığımız bu durum bigram olarak adlandırılır.
+
+```{r}
+epicoene_bigrams %>%
+  count(bigram, sort = TRUE)
+```
+Bir araya gelme sıklıklarına göre kelimeleri ikişerli şekilde sıraladığımızda duraklama kelimelerini ön planda görmekteyiz.Bu kelimelerden kurtulmak için öncelikle kelime gruplarını 2 sütuna ayırmalıyız.
+
+```{r}
+bigrams_separated <- epicoene_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(!word1 %in% mystopwords$word) %>%
+  filter(!word2 %in% mystopwords$word)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+bigram_counts
+```
+seperate, sütunları bir sınırlayıcıya göre birden çok bölüme ayıran bir tidyr fonksiyonudur.Bu fonksiyon ile sütunları ayırdıktan sonra durdurma kelimelerini filter ile eledik.Bu eserde karakterlerin en yaygın çitfler olduğunu söyleyebiliriz.
+
+```{r}
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigrams_united
+```
+unite fonksiyonu, seperatenin tam tersi işlevde olup ayrı olan kelime sütunlarını tekrar birleştirebilmemizi sağlar.
+
+## (n=3)
+
+```{r}
+epicoene %>%
+  unnest_tokens(trigram, text, token = "ngrams", n = 3) %>%
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         !word3 %in% stop_words$word,
+         !word1 %in% mystopwords$word,
+         !word2 %in% mystopwords$word,
+         !word3 %in% mystopwords$word) %>%
+  count(word1, word2, word3, sort = TRUE)
+```
+Trigram sonuçlarında da karakter isimlerinin çoğunlukta olduğunu görmekteyiz.Bu da bize karşılıklı diyalogların çok yani bir tiyatro oyunu olduğu ipucunu verir.
+
+```{r}
+bigrams_filtered %>%
+  filter(word2 == "house") %>%
+  count(title, word1, sort = TRUE)
+```
+İkili kelime gruplarında house kelimesini filtreleyerek olayın genel olarak Morose karakterinin evinde geçtiğini görüyoruz.
+
+```{r}
+bigram_tf_idf <- bigrams_united %>%
+  count(title, bigram) %>%
+  bind_tf_idf(bigram, title, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+
+```
+
+```{r}
+bigrams_separated %>%
+  filter(word1 == "no") %>%
+  count(word1, word2, sort = TRUE)
+```
+İkili kelime grubu olan bigramlardan "no" olumsuzluk kelimesini filtrelediğimizde gürültü ve inanç kelimesi dikkatimizi çekiyor. Eserde gürültülü ortamlar bulunup bu ortamların hoş karşılanmadığını söyleyebiliriz.Kelime bulutunda karşılaştığımız inanç ve dua etme sözcüklerine zıt olarak burada inanç kelimesi olumsuz bir durum olarak sonuç verdi.Bu da bize karakterlerin belli bir inanca sahip olduğu genellemesini yapamayacağımızı gösteriyor.
+
+
+```{r}
+not_words <- bigrams_separated %>%
+  filter(word1 == "not") %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word2, value, sort = TRUE)
+not_words
+```
+not kelimesiyle bir araya gelen kelimelerin AFINN sözlüğüne göre puanlamasını görüyoruz.Burada iyi anlamına gelen good kelimesinin değil anlamına gelen not kelimesinden sonra 3 (pozitif) AFINN puanıyla yer alması,onun yanlış yöne ne kadar katkıda bulunduğunun bir göstergesidir.
+
+```{r}
+not_words %>%
+  mutate(contribution = n * value) %>%
+  arrange(desc(abs(contribution))) %>%
+  head(20) %>%
+  mutate(word2 = reorder(word2, contribution)) %>%
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "Sentiment value * number of occurrences",
+       y = "Words preceded by \"not\"")
+```
+"iyi olmamak" bigramı yanlış tanımlamalara sebep oldu.Çünkü "iyi" kelimesi pozitif bir kelime olduğundan "not" yanında yer alarak eserin olumlu sonuçlar vermesine katkı sağladı. Sonuç olarak bu dört olumsuzlamanın yanında olan her kelime analiz sonuçlarımızı yanlış bir şekilde etkiledi.
+
+```{r}
+negation_words <- c("not", "no", "never", "without")
+
+negated_words <- bigrams_separated %>%
+  filter(word1 %in% negation_words) %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word1, word2, value, sort = TRUE)
+negated_words
+```
+"not" bir sonraki terimi olumsuzlaştıran tek bağlam değildir. No,never,without ile de yandaki terimleri olumsuzlaştırmak mümkündür.Bu tabloda, özünde olumlu olup aslında olumsuz olan ve yanlış analiz sonuçlar alınmasına sebep olan tüm kelimeleri görmekteyiz.
+
+```{r}
+bigram_graph <- bigram_counts %>%
+  filter(n >3) %>%
+  graph_from_data_frame()
+bigram_graph
+```
+Tabloda en yaygın ikilemeleri yani bigramları görmekteyiz.Buradan; Otter karakterinin bir kaptan olduğunu,olayın geçtiği evin Morose karakterine ait olduğunu,olayın ev dışında Bartholomew adında bir fuarda da geçtiğini söyleyebiliriz. Ayrıca Cynthia's revels ikilemesinden bir eğlence olduğunu ve silent woman ikileminden ise sessiz bir kadın olduğunu görüyoruz. Önceki yorumlarımızda "no" olumsuzlaştırmasının yanında gürültü kelimesini görmüştük.Bu eğlencenin bir gürültüye sebep olduğunu ve yine önceki analiz sonuçlarımıza göre bir boşanmaya sebebiyet verebileceği varsayımında bulunabiliriz.Hatırlarsak house kelimesini filtrelediğimizde ilk sırada Morose karakterini görmüştük. Tüm sonuçları birleştirdiğimizde bu evliliğin Morose karakterine ait olduğunu da düşünebiliriz.
+
+```{r message=FALSE, warning=FALSE}
+set.seed(2019)
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+```
+Olaylar arasındaki ilişkileri bu ağ görselleştirmesiyle de görebiliriz.
+
+```{r}
+epicoene_section_words <- epicoene %>%
+  mutate(section = row_number() %/% 10) %>%
+  filter(section > 0) %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word)
+
+epicoene_section_words
+```
+Burada eseri 10ar satırlık bölümlere ayırdık ve hangi kelimelerin görünme eğiliminde olduğunu analiz ettik.
+
+```{r message=FALSE, warning=FALSE}
+library(widyr)
+word_pairs <- epicoene_section_words %>%
+  anti_join(mystopwords) %>%
+  pairwise_count(word, section, sort = TRUE) 
+word_pairs
+```
+Widyr paketinin yararlı bir işlevi olan pairwise_count() fonksiyonu bize aynı bölümlerde ilişkili 2li kelimeleri, kullanılma sıklığına göre görüntüleme olanağı sağlar.Tablodan da karakterler arası diyalogların sıklık sayılarını görebiliriz.
+
+```{r}
+word_pairs %>%
+  filter(item1 == "morose")
+```
+2li kelimelerden Morose karakterini filtrelediğimizde bu karakterin en çok ilişkili olduğu karakterleri görmemiz mümkündür.
+
+```{r}
+word_cors <- epicoene_section_words %>%
+  group_by(word) %>%
+  filter(n() >= 20) %>%
+  pairwise_cor(word, section, sort = TRUE)
+
+word_cors
+```
+pairwise_cor fonksiyonu, bize ikili korelasyon için ortak bir ölçü olan phi katsayısını verir.Phi katsayısı, ikili verilere uygulandığında, Pearson korelasyonuna eşdeğerdir. Korelasyon katsayıları arttıkça ikili karakter ilişkilerini sık bir şekilde görüyoruz.Buradan da eserde diyalogların sık olduğunu anlamamız mümkündür.
+
+```{r}
+word_cors %>%
+  filter(item1 == "epı")
+```
+Epicoene karakterinin bigramlarında çıkan korelasyon değerine bakacak olursak korelasyon değerlerinin küçük olduğunu fakat ilk iki sırada Morose karakterinin yer aldığını görüyoruz.Önceki analizlerde Morose karakterinin bir evlilik geçirdiği varsayımından bahsetmiştik. Aynı analizde sessiz bir kadın profiliyle de karsılaşmıştık. Bu tabloya baktığımızda Morose karakterinin evlendiği ve sessiz bir yapıda olan bu kadının Epicoene karakteri olabileceği kanısına varabiliriz.
+
+```{r}
+set.seed(2016)
+
+word_cors %>%
+  filter(correlation > .15) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void()
+```
+Analizlerde bir evlilik ve boşanmanın söz konusu olduğunu söylemiştik.Hatta bu evliliğin Morose ile Epicoene karakterleri arasında olabileceği ve Epicoene karakterinin sessiz bir yapıda olduğu varsayımlarında bulunmuştuk. Grafikteki kelimelerin kümeleşmelerine baktığımızda noise ve marry eşleşmesi dikkatimizi çekebilir.Çünkü önceki analizlerde bu evliliğin gürültülü bir olay sonucu bitebileceğine değinmiştik.Epicoene karakteri hem sessiz hem de gürültü anlamına gelen kelimelerle eşleştiğine göre bu karakterde analizlerde sonuç alamadığımız bazı durumlar olduğu sonucunu çıkarabiliriz. Bu sonuç,gürültüden hiç hoşlanmayan Morose karakteriyle ayrılmalarına da sebep olmuş olabilir.Bunun dışında gold,coin,worth kümeleşmesini de görüyoruz.Bazı arsa problemleri olduğuna da değinmiştil. Sonuca bağlayacak olursak eserimiz başlıca bu 2 olayı ele almaktadır dıyebiliriz.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

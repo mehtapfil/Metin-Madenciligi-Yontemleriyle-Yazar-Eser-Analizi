@@ -1,0 +1,469 @@
+---
+title: "venice"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Kütüphaneler
+
+```{r message=FALSE, warning=FALSE}
+library(tidytext)
+library(dplyr)
+library(tidyverse)
+library(gutenbergr)
+library(tidyr)  # Düzenli veri oluşturma
+library(stopwords) # İstenmeyen kelimeleri çıkartma
+library(ggplot2)
+library(wordcloud) # Kelime Bulutu
+library(wordcloud2) #Kelime Bulutu
+```
+
+```{r message=TRUE, warning=FALSE}
+gutenberg_metadata
+```
+
+```{r}
+venice <- gutenberg_download((1515), meta_fields = "title")
+```
+
+## Duraklama Kelimeleri
+
+
+```{r}
+mystopwords <- tibble(word = c("ı","thou","thee","ıf","thy","ın","ı'll","ıs","ıt"))
+```
+
+
+```{r message=FALSE, warning=FALSE}
+tidy_venice <- venice %>%
+  unnest_tokens(word, text) %>%
+   anti_join(stop_words) %>%
+  anti_join(mystopwords)
+```
+
+## En Çok Kullanılan Kelimeler
+
+```{r}
+tidy_venice %>%
+  count(word, sort = TRUE)
+```
+
+
+
+## Kelime Kullanılma Sıklığı Histogram
+
+```{r message=FALSE, warning=FALSE}
+tidy <- venice %>%
+  unnest_tokens(word,text) %>%
+  count(word,sort=T) %>%
+  anti_join(stop_words) %>%
+  anti_join(mystopwords) %>%
+  filter(!word %in% stop_words$word,     
+
+         str_detect(word, "[a-z]"))
+```
+
+```{r}
+tidy %>% 
+  head(20)%>%
+  ggplot(aes(reorder(word,n),n))+ 
+  geom_col(fill= "purple")+
+  coord_flip()+
+  labs(x="kelimeler",
+       y="Kelime Sayısı",
+       title= "The Merchant of Venice")
+```
+
+## Duygu Analizi
+
+## Nrc
+
+```{r}
+tidy %>% 
+  inner_join(get_sentiments("nrc"))
+```
+
+
+```{r}
+tidy %>% 
+  inner_join(get_sentiments("nrc")) %>%
+  ggplot(aes(sentiment, n, fill= sentiment))+
+  geom_col()
+```
+
+## Bing
+
+```{r}
+tidy %>% 
+  inner_join(get_sentiments("bing"))
+```
+
+
+```{r}
+tidy %>% 
+  inner_join(get_sentiments("bing")) %>%
+  ggplot(aes(sentiment, n, fill= sentiment))+
+  geom_col()
+```
+
+
+```{r}
+rbind(
+  
+tidy %>% 
+  inner_join(get_sentiments("bing")) %>%
+  arrange(-n) %>%
+  filter(sentiment == "positive") %>%
+  head(20),
+
+tidy %>% 
+  inner_join(get_sentiments("bing")) %>%
+  arrange(-n) %>%
+  filter(sentiment == "negative") %>%
+  head(20)) %>%
+  ggplot(aes(reorder(word,n),n, fill=sentiment)) +
+  geom_col(show.legend = FALSE)+
+  facet_wrap(~sentiment,scales = "free_y") +
+  coord_flip() +
+  labs( x = "Kelimeler" , y = "Frekanslar" , title = "The Merchant of Venice Duygu Analizi" , caption = "Bing Sözlüğüne Göre Duygu Analizi" )
+```
+
+
+
+
+
+```{r}
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+
+tidy_venice %>% 
+  inner_join(nrc_joy) %>%
+  count(word, sort = TRUE)
+```
+
+## Kelime Bulutu
+
+```{r}
+tidy_venice %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100,colors=brewer.pal(8, "Dark2")))
+```
+
+```{r}
+wordcloud2(data = tidy,
+           color = "random-light", 
+           backgroundColor = "grey25",
+           size =0.6)
+```
+
+
+```{r}
+wordcloud2(data = tidy, size = 0.7, shape = 'star')
+```
+
+
+```{r}
+library(reshape2)
+
+tidy_venice %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray20", "gray80"),
+                   max.words = 100)
+```
+
+## Olumsuzluk
+
+```{r}
+bingnegative <- get_sentiments("bing") %>% 
+  filter(sentiment == "negative")
+bingnegative
+```
+
+```{r message=FALSE, warning=FALSE}
+wordcounts <- tidy_venice %>%
+  group_by(title, gutenberg_id) %>%
+  summarize(words = n())
+```
+
+```{r}
+tidy_venice %>%
+  semi_join(bingnegative) %>%
+  group_by(title, gutenberg_id) %>%
+  summarize(negativewords = n()) %>%
+  left_join(wordcounts, by = c("title", "gutenberg_id")) %>%
+  mutate(ratio = negativewords/words) %>%
+  filter(gutenberg_id != 0) %>%
+  slice_max(ratio, n = 1) %>% 
+  ungroup()
+```
+### Bu kitapta duygu analizi yapıldığında en olumsuz olan bölümün oranı 0.078 bulundu.
+
+
+```{r}
+bingpositive <- get_sentiments("bing") %>% 
+  filter(sentiment == "positive")
+bingpositive
+```
+
+```{r}
+wordcounts <- tidy_venice %>%
+  group_by(title, gutenberg_id) %>%
+  summarize(words = n())
+```
+
+```{r}
+tidy_venice %>%
+  semi_join(bingpositive) %>%
+  group_by(title, gutenberg_id) %>%
+  summarize(positivewords = n()) %>%
+  left_join(wordcounts, by = c("title", "gutenberg_id")) %>%
+  mutate(ratio = positivewords/words) %>%
+  filter(gutenberg_id != 0) %>%
+  slice_max(ratio, n = 1) %>% 
+  ungroup()
+```
+
+## NGRAMLAR (n=2)
+
+```{r}
+venice_bigrams <- venice %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+venice_bigrams
+```
+
+```{r}
+venice_bigrams %>%
+  count(bigram, sort = TRUE)
+```
+
+```{r}
+bigrams_separated <- venice_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(!word1 %in% mystopwords$word) %>%
+  filter(!word2 %in% mystopwords$word)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+bigram_counts
+```
+
+```{r}
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigrams_united
+```
+
+
+## (n=3)
+
+```{r}
+venice %>%
+  unnest_tokens(trigram, text, token = "ngrams", n = 3) %>%
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         !word3 %in% stop_words$word,
+         !word1 %in% mystopwords$word,
+         !word2 %in% mystopwords$word,
+         !word3 %in% mystopwords$word) %>%
+  count(word1, word2, word3, sort = TRUE)
+```
+
+```{r}
+bigrams_filtered %>%
+  filter(word2 == "street") %>%
+  count(title, word1, sort = TRUE)
+```
+
+```{r}
+bigram_tf_idf <- bigrams_united %>%
+  count(title, bigram) %>%
+  bind_tf_idf(bigram, title, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+
+```
+
+```{r}
+bigrams_separated %>%
+  filter(word1 == "not") %>%
+  count(word1, word2, sort = TRUE)
+```
+
+```{r}
+AFINN <- get_sentiments("afinn")
+AFINN
+```
+
+```{r}
+not_words <- bigrams_separated %>%
+  filter(word1 == "not") %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word2, value, sort = TRUE)
+not_words
+```
+
+
+```{r}
+not_words %>%
+  mutate(contribution = n * value) %>%
+  arrange(desc(abs(contribution))) %>%
+  head(20) %>%
+  mutate(word2 = reorder(word2, contribution)) %>%
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "Sentiment value * number of occurrences",
+       y = "Words preceded by \"not\"")
+```
+
+```{r}
+negation_words <- c("not", "no", "never", "without")
+
+negated_words <- bigrams_separated %>%
+  filter(word1 %in% negation_words) %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word1, word2, value, sort = TRUE)
+negated_words
+```
+
+
+
+```{r}
+library(igraph)
+bigram_counts
+```
+
+```{r}
+bigram_graph <- bigram_counts %>%
+  filter(n > 1) %>%
+  graph_from_data_frame()
+bigram_graph
+```
+
+
+```{r}
+library(ggraph)
+set.seed(2017)
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+```
+
+```{r}
+set.seed(2020)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+```
+
+```{r}
+venice_section_words <- venice %>%
+  mutate(section = row_number() %/% 10) %>%
+  filter(section > 0) %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word)
+
+venice_section_words
+```
+
+```{r}
+library(widyr)
+word_pairs <- venice_section_words %>%
+  pairwise_count(word, section, sort = TRUE) 
+word_pairs
+```
+
+```{r}
+word_pairs %>%
+  filter(item1 == "portıa")
+```
+
+```{r}
+word_cors <- venice_section_words %>%
+  group_by(word) %>%
+  filter(n() >= 20) %>%
+  pairwise_cor(word, section, sort = TRUE)
+
+word_cors
+```
+
+```{r}
+word_cors %>%
+  filter(item1 == "gobbo")
+```
+
+```{r}
+word_cors %>%
+  filter(item1 %in% c("gobbo", "salanıo", "launcelot", "salarıno")) %>%
+  group_by(item1) %>%
+  slice_max(correlation, n = 6) %>%
+  ungroup() %>%
+  mutate(item2 = reorder(item2, correlation)) %>%
+  ggplot(aes(item2, correlation)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ item1, scales = "free") +
+  coord_flip()
+```
+
+```{r}
+set.seed(2016)
+
+word_cors %>%
+  filter(correlation > .15) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

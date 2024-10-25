@@ -1,0 +1,1230 @@
+---
+title: "Ben Jonson"
+author: "Mehtap Fil 121516020"
+date: "15 06 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Gutenberg'den Metin Verisi Cekmek
+
+```{r}
+library(gutenbergr)
+library(dplyr)
+
+benjonson_eserleri<- gutenberg_metadata %>%
+  filter(author %in% "Jonson, Ben", 
+         language == "en")
+
+benjonson<- gutenberg_download(c(4011,49461,4039))
+```
+
+Burada filtreleme islemi ile gutenberg kutuphanesinde Shakespeare'a ait olan 3 adet komedi türündeki eserlerini cektik.
+
+```{r}
+basliklar<-benjonson_eserleri %>%
+  select(gutenberg_id, title)
+
+benjonson <- benjonson %>% 
+  inner_join(basliklar, by = "gutenberg_id")
+```
+
+Yukarida gutenberg id numarasina gore cektigimiz eserlere baslik atadik. Bu sayede kitaplari ayirt edebiliriz.
+
+# PARCALAMA ISLEMLERI
+
+```{r}
+library(tidytext)
+benjonson1<-benjonson %>%
+  unnest_tokens(word, text) %>%
+  count(word, sort = TRUE)
+benjonson1
+```
+Burada unnest_tokens fonksiyonu ile metindeki her bir kelimeyi parcaladik. Kelime frekanslarina bakmak icin count fonksiyonunu kullandik. Burada her bir kelimenin metin icerisinde kac kez gectigini goruyoruz. Burada gördüğümüz gibi en fazla tekrar eden kelimeler anlamsiz görünüyor. Burada baktigimizda 57. gozlemde Petruchio karakterinin geldiğini goruyoruz. Yani ilk 56 gozlem bizim icin bir anlam ifade etmiyor.Daha sonra 77. gozlemde Viola karakterini görüyoruz. Yani aslinda Petruchio karakterini disarda biraktigimizda ilk 76 gozlemin bizim için anlamsiz oldugu görülüyor. Bu durumda metinde cok fazla tekrar eden ama tek basina bir anlam ifade etmeyen kelimelere duraklama kelimeleri denir. Duraklama kelimelerini metin icerisinden cikarmamiz gerek.
+
+```{r}
+tidybenjonson<-benjonson %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  count(word, sort = TRUE)
+
+tidybenjonson
+```
+
+Suanda tek basina anlamsiz gorunen kelimeler versetimizden cikartildi ve verimiz tidy hale geldi. Verimiz duzenli metin formatina dönüsmüs oldu. Metin eski dilde yazildigindan ötürü stopwords olarak algılanmayan bazı kelimeler de mevcut. Örnegin thy:sizin gibi. Bunlari da temizlememiz gerekli.
+
+```{r}
+mystopwords<-tibble(word = c("ı", "thou", "sır", "jonson", "thou", "ı'll", "ın", "la", "thy", "thee", "tis", "ıt", "ay", "ıf", "ıs", "jonson's", "1", "shakespeare", "_enter", "ha", "i'faith", "2", "_aside", "_exit", "ben", "3", "4", "_re", "avoc", "uh", "ly", "_ıt", "_you", "te", "1609"))
+tidybenjonson1<-benjonson %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  anti_join(mystopwords) %>%
+  count(word, sort = TRUE)
+tidybenjonson1
+```
+
+
+
+```{r}
+library(ggplot2)
+tidybenjonson1 %>% 
+  filter(n > 110) %>%
+  ggplot(aes(reorder(word,n),n))+
+  geom_col(fill = "forestgreen", alpha = 0.8)+
+  coord_flip()+
+  labs(x = "Kelimeler",
+       y = "En Cok Tekrar Eden Kelimeler",
+       title = "Ben Jonson")
+```
+
+# DUYGU ANALIZI
+Metin icerisindeki kelimelerin hangi duygulari icerdigine bakilir. Metin olumlu mu olumsuz mu temel prensibimiz bu. 3 tane temel duygu sözlüğümüz var.
+
+**AFINN (Finn Arup Nielsen):** -5 ile +5 araliginda kelimeleri skorluyor.
+**bing (Bing Liu and Collaborators):** olumlu olumsuz seklinde kelimeleri ayrıştırıyor.
+**nrc (Saif Mohammad and Peter Turney):** birden fazla duygu icerir.
+
+```{r}
+tidybenjonson1 %>% 
+  inner_join(get_sentiments("nrc"))
+```
+
+
+```{r}
+tidybenjonson1 %>% 
+  inner_join(get_sentiments("afinn"))
+```
+
+
+```{r}
+tidybenjonson1 %>% 
+  inner_join(get_sentiments("bing"))
+```
+
+
+NRC sözlüğüne göre duyguların frekanslarına dayalı bir görselleştirme yapalım.
+
+```{r}
+tidybenjonson1 %>% 
+  inner_join(get_sentiments("nrc"))%>%
+  ggplot(aes(sentiment, n, fill = sentiment))+
+  coord_flip()+
+  geom_col()
+```
+
+Shakespeare'in trajikomik 3 eseri için olumlu olan satir en fazla olarak karsimiza cikmis. NRC sozlugunde pozitiften cok negatif duygular daha agir basar. Bu grafik Shakespeare'in trajikomik eserlerinin bize olumlu duygular içeriyor olabilecegini gösterir.
+
+```{r}
+tidybenjonson1 %>% 
+  inner_join(get_sentiments("bing"))%>%
+  ggplot(aes(sentiment, n, fill = sentiment))+
+  geom_col()
+```
+
+Bing sözlüğüne göre negatif duygular daha agır basmış. Sözcüklerde negatif olan kelimeler daha fazladır. 
+
+#Hangi kelimeler daha fazla ön plana çıkmış?
+
+```{r}
+rbind(
+  
+tidybenjonson1 %>% 
+  inner_join(get_sentiments("bing"))%>%
+  arrange(-n) %>%
+  filter(sentiment == "positive") %>%
+  head(20),
+
+tidybenjonson1 %>% 
+  inner_join(get_sentiments("bing"))%>%
+  arrange(-n) %>%
+  filter(sentiment == "negative") %>%
+  head(20)
+) %>%
+  ggplot(aes(word, n, fill = sentiment))+
+  coord_flip()+
+  facet_wrap(~sentiment, scales = "free_y")+
+  geom_col(show.legend = "FALSE")+
+  theme_light()+
+  labs(x = "Kelimeler",
+       y= "Frekanslar",
+       title= "Ben Jonson",
+       caption = "Bing sözlüğüne göre duygu analizi")
+```
+
+Pozitif kelimelere baktigimizda wise, sweet, soft, rich, ready gibi kelimeler ve negatif kelimelere baktigimizda wrong, worse, wilt, sly, sad gibi kelimeler mevcut.
+
+```{r}
+library(stringr)
+
+benjonson <- benjonson %>%
+  group_by(title) %>%
+  mutate(linenumber = row_number(),
+         chapter = cumsum(str_detect(text, 
+                                     regex("^act [\\divxlc]",
+                                           ignore_case = TRUE)))) %>%
+  ungroup()
+benjonson
+```
+
+Stringr ile bir veri manipulasyonu islemi yapildi. Daha sonra her bir satira bir satir numarasi ekledik.
+
+```{r}
+tidy_benjonson<- benjonson %>%
+  unnest_tokens(word, text)
+tidy_benjonson
+```
+
+Metni elde ettikten sonra yukarida inceledigimiz 3 eseri parcaladik. Parcalama isleminden sonra duraklama kelimelerini yani tek basina anlam ifade etmeyen ifadeleri cikarmamiz gerek.
+
+```{r}
+data(stop_words)
+
+tidy_benjonson <- tidy_benjonson %>%
+  anti_join(stop_words) %>%
+  anti_join(mystopwords)
+
+```
+
+Artik duraklama kelimeleri veri setinden cikartildi. Simdi kelimelerin frekanslarini ortaya cikartalim.
+
+```{r}
+tidy_benjonson %>%
+  count(word, sort = TRUE)
+```
+
+```{r}
+library(ggplot2)
+
+tidy_benjonson %>%
+  count(word, sort = TRUE) %>%
+  filter(n > 110) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() +
+  labs(y = NULL)
+```
+
+Simdi de **Ben Jonson'dan** 3 adet komedi turundeki eseri ele alalim.
+
+```{r}
+library(gutenbergr)
+
+shakespeare <- gutenberg_download(c(1515,1508,1526))
+```
+
+Bu 3 esere ait duraklama kelimelerini cikaralim.
+
+```{r}
+tidy_shakespeare <- shakespeare %>%
+  unnest_tokens(word, text) %>%
+  anti_join(stop_words) %>%
+  anti_join(mystopwords)
+```
+Daha sonra kelime frekanslarina bakalim.
+
+```{r}
+tidy_shakespeare %>%
+  count(word, sort = TRUE)
+```
+
+Simdi 2 yazarin birbirleri ile olan benzerliklerine bakalim. Benzerliklere bakarken öncelikle burada 2 veri setini birlestirdik. Daha sonra proportion yani oran diye yeni bir değişken tanımladık. Bu oran kelimelerin toplam kelimelere bölünmesi şeklinde oluşmaktadır. Fakat burada toplam kelime dediğimiz şey her bir yazarın kullandığı kelimelerin toplamıdır.
+
+**Asagida William Shakespeare'in Ben Jonson'a gore oransal karsilastirmasini yaptik.**
+
+```{r}
+library(tidyr)
+
+frequency <- bind_rows(mutate(tidy_benjonson, author = "Ben Jonson"),
+                       mutate(tidy_shakespeare, author = "William Shakespeare")) %>% 
+  mutate(word = str_extract(word, "[a-z']+")) %>%
+  count(author, word) %>%
+  group_by(author) %>%
+  mutate(proportion = n / sum(n)) %>% 
+  select(-n) %>% 
+  spread(author, proportion) %>%
+  gather(author, proportion, `William Shakespeare`)
+
+frequency
+```
+
+```{r}
+library(scales)
+
+# expect a warning about rows with missing values being removed
+ggplot(frequency, aes(x = proportion, y = `Ben Jonson`, 
+                      color = abs(`Ben Jonson` - proportion))) +
+  geom_abline(color = "gray40", lty = 2) +
+  geom_jitter(alpha = 0.1, size = 2.5, width = 0.3, height = 0.3) +
+  geom_text(aes(label = word), check_overlap = TRUE, vjust = 1.5) +
+  scale_x_log10(labels = percent_format()) +
+  scale_y_log10(labels = percent_format()) +
+  scale_color_gradient(limits = c(0, 0.001), 
+                       low = "darkslategray4", high = "gray75") +
+  facet_wrap(~author, ncol = 2) +
+  theme(legend.position="none") +
+  labs(y = "Ben Jonson", x = NULL)
+```
+
+
+Burada x degiskenim oran, y degiskenim ise William Shakespeare'dir. Görselde William Shakespeare ile Ben Jonson'un kıyaslaması yapılmıştır. Grafik bize 2 yazarın birbirinden olan farklılıkları ve benzerliklerini gösteriyor. Lineer kesikli çizgiye ne kadar yakın olunursa o kadar 2 yazarın kullandığı kelimeler birbirine benziyor oluyor. Örneğin bond, lorenzo, jew gibi kelimeler bir uç değer. art,lady,bear gibi kelimeler lineer çizgiye yakın. bond, lorenzo, jew gibi kelimeler lineer çizgiye yakın olmadıgı için William Shakespeare bu kelimeleri daha cok kullanmıs diyebiliriz. Bunun haricinde William Shakespeare ve Ben Jonson art,lady,bear gibi kelimeleri ortak bir biçimde eserlerinde fazla kullanmış. 
+
+Bu gibi uç değerleri veya görünebilir değerleri karşılaştırmak mümkün buradan farklılıklar ortaya çıkarılabilir.
+
+## 2 yazar arasinda bir iliski var mi yok mu? (KORELASYON TESTİ)
+
+```{r}
+cor.test(data = frequency[frequency$author == "William Shakespeare",],
+         ~ proportion + `Ben Jonson`)
+```
+
+Orana göre Pearson Korelasyon katsayisinin sonucuna baktigimizda p degeri<0.05 oldugundan H0 hipotezi red edilir. H0:2 degisken arasinda iliski yoktur. olarak tanimlanir. Burada H0 hipotezini reddettigimize gore William Shakespeare ile Ben Jonson arasinda bir iliski oldugu söylenir. Korelasyon katsayisina baktigimizda 0.64 olarak bulunmus bu deger anlamlidir.
+
+```{r}
+cor.test(data = frequency[frequency$author == "William Shakespeare",],
+         ~ proportion + `Ben Jonson`, method = "spearman")
+```
+
+Spearman'a göre de H0 reddedilir yani bir ilişki vardir. fakat korelasyon katsayisi düşmüştür.
+
+(BU BILGILERI ARASTIR DUZENLERKEN)
+
+## DETAYLI DUYGU ANALIZI
+
+Duygu analizi dedigimiz sey metin icerisindeki anlamlari ortaya cikarmak icin yapiliyor.
+
+```{r}
+nrc_joy <- get_sentiments("nrc") %>% 
+  filter(sentiment == "joy")
+
+tidy_benjonson %>%
+  inner_join(nrc_joy) %>%
+  count(word, sort = TRUE)
+```
+
+Burada Shakespeare'in eserlerini sectik daha sonra nrc sözlügündeki joy duygusunu secip count olarak kelimeleri saydırdık. 
+
+**NOT**: %/% bu operator tam sayı bölmeye yarıyor. Biz elimizdeki metni 40 satırlık parçalara ayırmak istiyoruz. Daha sonra bunun duygu analizini yapmak istiyoruz her bir kitap için.
+
+```{r}
+library(tidyr)
+
+benjonson_sentiment <- tidy_benjonson %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(title, index = linenumber %/% 40, sentiment) %>%
+  spread(sentiment, n , fill = 0) %>% 
+  mutate(sentiment = positive - negative)
+```
+
+Burada kitaplarimiz ile bing duygu sözlüğünü birlestirdik. Yani bizim elimizdeki kitaplar olumlu mu olumsuz mu bunları karsılastırıyor olacağız. Daha sonra count işlemi ile kitapları ve duyguları saydırıyoruz. Aynı zamanda bir index oluşturarak satır numaralarını 40 satırlık tam sayıya bölüyoruz. Daha sonra sentiment içerisindeki pozitif ve negatif olarak 2 gözlem değeri mevcut. Biz bu pozitif ve negatifi kelime frekanslarına göre değişken olarak tanımladık. Daha sonra mutate ile sentiment değişkeni oluşturarak pozitif ve negatif frekanslar arasındaki farkı aldık.
+
+```{r}
+library(ggplot2)
+
+ggplot(benjonson_sentiment, aes(index, sentiment, fill = title)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~title, ncol = 2, scales = "free_x")
+```
+
+Grafige baktigimizda Shakespeare'in her eserinin olay örgüsünün, hikayenin gidişatı üzerinde daha olumlu veya olumsuz duygulara doğru nasıl değiştiğini görebiliriz.
+
+## 3 DUYGU SOZLUGUNUN KARŞILAŞTIRILMASI
+
+3 duygu sözlugunun birbirinden farklı özellikleri var mi?
+
+```{r}
+epicoene <- tidy_benjonson %>% 
+  filter(title == "Epicoene; Or, The Silent Woman")
+epicoene
+```
+
+Burada Shakespeare'in bir kitabini filtreledik. Simdi inner join ile duygu sözlüklerini birlestirelim. Bizim 3 tane duygu sözlüğümüz vardi. Bunlardan **Afinn** -5 ile +5 arasinda skorlamalara sahip. **Bing ve Nrc** ise kategorik duygulari iceriyordu. Buralarda dönüsümler yapmak gerekecek. Aslında burada yapilan sey, yukarida yaptigimiz gibi bir indexleme durumu yapiyor 80 satirlik bölümlere göre (AfinN,Bing ve Nrc'ye göre.) Nrc sözlüğü birden fazla duygu icerdiginden dolayi bunlari pozitif ve negatif olarak filtreledik. Yani **Bing ve Nrc'yi Afinn sözlüğü gibi skorladık.**
+
+```{r}
+afinn <- epicoene %>% 
+  inner_join(get_sentiments("afinn")) %>% 
+  group_by(index = linenumber %/% 40) %>% 
+  summarise(sentiment = sum(value)) %>% 
+  mutate(method = "AFINN")
+
+bing_and_nrc <- bind_rows(
+  epicoene %>% 
+    inner_join(get_sentiments("bing")) %>%
+    mutate(method = "Bing et al."),
+  epicoene %>% 
+    inner_join(get_sentiments("nrc") %>% 
+                 filter(sentiment %in% c("positive", 
+                                         "negative"))
+    ) %>%
+    mutate(method = "NRC")) %>%
+  count(method, index = linenumber %/% 40, sentiment) %>%
+  spread(sentiment, n, fill=0) %>% 
+  mutate(sentiment = positive - negative)
+```
+Burada Afinn, Bing ve NRC sözlüklerini birbirlerine benzettik yukaridaki islemlerde daha sonra görsellestirmelerini yaptik.
+
+```{r}
+bind_rows(afinn, 
+          bing_and_nrc) %>%
+  ggplot(aes(index, sentiment, fill = method)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+```
+
+Burada gördüğümüz gibi 3 grafigin de benzediği ve benzemedigi durumlar mevcut. Afinn ve Bing sözlüğü daha cok birbirine benziyor. Tabi bunlarin farkliliklari mevcut. Dikkat edilirse benzer noktalarda benzer hareketler sergiledikleri görülüyor. Bu grafikten Shakespeare'in The Merchant of Venice kitabinin olumlu bir metin oldugunu söyleyebiliriz.
+
+
+## EN YAYGIN OLUMLU VE OLUMSUZ KELİMELER
+
+```{r}
+bing_word_counts <- tidy_benjonson %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup()
+bing_word_counts
+```
+
+Negatif ve pozitif olan en yaygin kelimeleri bulmak istiyoruz.
+
+```{r}
+bing_word_counts %>%
+  group_by(sentiment) %>%
+  slice_max(n, n = 10) %>% 
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word, fill = sentiment)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~sentiment, scales = "free_y") +
+  labs(x = "Contribution to sentiment",
+       y = NULL)
+```
+
+## KELIME BULUTU
+
+```{r}
+library(wordcloud)
+
+tidy_benjonson %>%
+  anti_join(stop_words) %>%
+  anti_join(mystopwords) %>%
+  count(word) %>%
+  with(wordcloud(word, n, max.words = 100))
+```
+
+Kelime bulutu bir sekil etrafinda kelimeleri frekanslarina göre dagitiyor.
+
+```{r}
+library(reshape2)
+
+tidy_benjonson %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  acast(word ~ sentiment, value.var = "n", fill = 0) %>%
+  comparison.cloud(colors = c("gray20", "gray60"),
+                   max.words = 100)
+```
+
+Buradaki kelime bulutunda ise negatif kelimeler yukarida pozitif kelimeler asagida yer almaktadir. 
+
+## Shakespeare'in kitaplarindaki en olumsuz bölümü bulmak?
+
+Burada bingnegative ile negatif olan kelimeleri sectik. Daha sonra Shakespeare'in kitaplari icerisinden kitaplari ve chapterlari aldik daha sonra summarize ile kelimeleri saydik.
+
+Daha sonra tidy_shakespeare'i yari birlestirme ile bingnegative'lere bagladik. 
+
+Daha sonra mutate ile bir oranlama islemi yaptik. (Negatif kelimeleri toplam kelimelere böldük.)
+
+```{r}
+bingnegative <- get_sentiments("bing") %>% 
+  filter(sentiment == "negative")
+
+wordcounts <- tidy_benjonson %>%
+  group_by(title, chapter) %>%
+  summarize(words = n())
+
+tidy_benjonson %>%
+  semi_join(bingnegative) %>%
+  group_by(title, chapter) %>%
+  summarize(negativewords = n()) %>%
+  left_join(wordcounts, by = c("title", "chapter")) %>%
+  mutate(ratio = negativewords/words) %>%
+   filter(chapter != 0) %>%
+  slice_max(ratio, n = 1) %>% 
+  ungroup()
+```
+
+Baktigimiz zaman bu orana göre Twelfth Night; Or, What You Will bu 3 esere göre en olumsuz kitap olarak karsimiza cikmaktadir. Ayni zamanda The Merchant of Venice eserinde 13. sahnenin en olumsuz sahne olduğu gibi yorumlar da yapabiliriz.
+
+
+## TF-IDF ISTATISTIGI (KELIME VE BELGE SIKLIGI ANALIZI)
+
+Shakespeare'in eserleri üzerinden buna bir bakalim.
+
+Burada Shakespeare'in kitaplarini cagirdik ve unnest tokens ile metinleri kelimelere parcaladik. count islemi ile de kitaplarin ve kelimelerin frekanslarina baktik. Burada group by ile her bir kitabi gruplayip daha sonra her bir kitap icerisindeki kelimelerin frekanslarina bakiyor olacagiz. left join ile de kelime frekanslarini ve toplam frekanslarini birlestiriyor olduk.
+
+```{r}
+library(dplyr)
+library(tidytext)
+
+book_words <- benjonson %>%
+  unnest_tokens(word, text) %>%
+  count(title, word, sort = TRUE)
+
+total_words <- book_words %>% 
+  group_by(title) %>% 
+  summarize(total = sum(n))
+
+book_words <- left_join(book_words, total_words)
+
+book_words
+```
+
+Burada örneğin The Merchant of Venice kitabi icerisinde the kelimesi 829 kere gecmis ve toplamda The Merchant of Venice kitabinda 22328 kelime gecmis. 
+
+Her bir kitap icin bir kullanım sıklığı var ve farklı davranislar sergiliyor mu sergilemiyor mu bunu arastirmak istiyoruz diyelim. Bunun icin her bir kitap icin kelimelerin dagilimini gösteren bir grafik cizdirelim.
+
+```{r}
+library(ggplot2)
+
+ggplot(book_words, aes(n/total, fill = title)) +
+  geom_histogram(show.legend = FALSE) +
+  xlim(NA, 0.0009) +
+  facet_wrap(~title, ncol = 2, scales = "free_y")
+```
+
+Görüldüğü üzere 3 kitapta da benzer kelime frekansi kullanilmis. Yani Shakespeare'in 3 kitabinda da belirli ölçülerde kitaplarini yazdigini söyleyebiliriz.
+
+##ZIPF KANUNU
+
+Zipf kanununu bir sey artarken bir seyin azalmasi seklinde düsünebiliriz. Ayni zamanda dünyadaki bir cok olay Zipf Yasasina uygun hareket eder.
+
+book_words ile kelime frekanslarini aldik ve group by ile her bir kitaba göre gruplama yaptik. Daha sonra mutate islemi ile yeni degiskenler olusturduk. Rank dedigimiz satir sayilarini veren bir degisken olusturduk ve kelime frekansi dedigimizde de kelime frekansi/o kitap icerisinde gecen toplam frekans diye bir degisken olusturusuz ve bunu da freq_by_rank olarak isimlendirdik.
+
+```{r}
+freq_by_rank <- book_words %>% 
+  group_by(title) %>% 
+  mutate(rank = row_number(), 
+         `term frequency` = n/total) %>%
+  ungroup()
+
+freq_by_rank
+```
+
+Görmüs oldugumuz üzere 829/22328=0.0371 seklinde bir deger verdi. Yani The Merchant of Venice kitabinda the kelimesinin gecme orani 0.0371'dir diyor kelime frekansi.
+
+```{r}
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, color = title)) + 
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+Zipf yasasi bir seyin artarken bir seyin azalmasini gösteriyordu bu grafik de bunu gösteriyor. Görmüs oldugumuz üzere rank arttikca kelime frekansi azaliyor. 
+
+Simdi ranklarin alt kumesini alalım.
+
+```{r}
+rank_subset <- freq_by_rank %>% 
+  filter(rank < 500,
+         rank > 10)
+
+lm(log10(`term frequency`) ~ log10(rank), data = rank_subset)
+```
+
+Burada katsayilari bulmak üzere bir regresyon modeli olusturuldu. Regresyon modelinde de kelime frekansinin logaritmik hali bagimli degisken ve rank da bagimsiz degisken olarak alindi. 
+
+Bu katsayilar ne isimize yarayacak?
+
+Yukarida kurmus oldugumuz regresyon modeli ile asagidaki kesikli bir bicimde gösterilen egimi bulmus olduk.
+
+```{r}
+freq_by_rank %>% 
+  ggplot(aes(rank, `term frequency`, color = title)) + 
+  geom_abline(intercept = -0.760, slope = -1.061, 
+              color = "gray50", linetype = 2) +
+  geom_line(size = 1.1, alpha = 0.8, show.legend = FALSE) + 
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+## bind_tf_idf() FONKSİYONU
+
+Bu fonksiyon bir baglama islemi yapar. Her bir kelimenin kitabin ve frekansa göre.
+
+```{r}
+book_tf_idf <- book_words %>%
+  bind_tf_idf(word, title, n)
+
+book_tf_idf
+```
+
+```{r}
+book_tf_idf %>%
+  select(-total) %>%
+  arrange(desc(tf_idf))
+```
+
+Burada tf_idf degerine göre azalan sekilde göstermesi icin ayarladik. Burada tf_idf degerinin en yüksek oldugu kitap The Comedy of Errors kitabiymis ve en yuksek cikan oran da _ant kelimesi imis. 2. en yüksek tf_idf degeri ise The Taming of the Shrew kitabiymis ve en yuksek cikan oran da petruchio kelimesi olmus. Bu 2 kelime de bir karakter ismidir.
+
+Söyle düsünmemiz lazim: Bir kitap kisilere olaylara mekanlara dayandigindan kaynakli belirli seyler etrafinda dönüp dolasaktir ve en fazla bunlarin cikmasi beklenir. Burada da zaten her bir kitapta bas kahramanlar ya da önemli olan yan karakterler gözükmüs oluyor.
+
+```{r}
+library(forcats)
+
+book_tf_idf %>%
+  group_by(title) %>%
+  slice_max(tf_idf, n = 10) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(word, tf_idf), fill = title)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~title, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
+```
+
+Grafige baktigimizda tf_idf degerlerine göre The Taming of the Shrew eserinde petruchio, tranio,katherina,hortensio gibi kelimeler oldugunu görüyoruz. Cogunluk olarak isimler mevcut. 
+
+
+
+## KELIMELER ARASINDAKI ILISKILER: n gramlar ve korelasyon
+
+İlk olarak n gramlardan baslayalim. n gram dedigimiz sey metni parcalara ayirmak. Burada n bir sayiyi temsil ediyor. Biz birer kelimelere bölmüştük metnimizi. n'i arttirarak istediğimiz sekilde kelimelere parcalayabiliriz.
+
+
+```{r}
+library(dplyr)
+library(tidytext)
+
+benjonson_bigrams <- benjonson %>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2)
+
+benjonson_bigrams
+```
+
+Burada 1 degisken icerisinde 2ser kelimeler gelmis oldu. Burada baktigimizda ilk kelimeler the taming of the shrew imis. Fakat the taming, taming of seklinde yani kendisi taming olacak sekilde bir önceki ve bir sonraki ile eşleştiriyor. Bu şekilde 2'ser 2'ser bakiyor.
+
+**Yani kendisinden önceki ve sonraki sayida kelimeler aliniyor**
+
+Daha sonra kelimeleri parcaladiktan sonra bunlarin frekanslarini cikartmamiz lazim. Bunu cikarttiğimiz zaman duraklama kelimelerinin cok fazla olduğunu görüyoruz.
+
+```{r}
+benjonson_bigrams %>%
+  count(bigram, sort = TRUE)
+```
+
+Yine her zaman oldugu gibi duraklama kelimelerini cikarmamiz gerek. Fakat burada nasil cikaracagimiz bir problem. Tidyr kütüphanesindeki seperate fonksiyonu ile bu problemi cözecegiz. Napiyoruz? Bizim elimizde 2 tane kelime var. Bunlari seperate fonksiyonu ile parcalayip yeni değişkenler olusturacagiz.
+
+```{r}
+library(tidyr)
+
+bigrams_separated <- benjonson_bigrams %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+   filter(!word1 %in% mystopwords$word) %>%
+  filter(!word2 %in% mystopwords$word)
+
+# new bigram counts:
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+
+bigram_counts
+```
+
+seperate() fonksiyonunun anti islemi olan unite() fonksiyonu var. seperate fonksiyonunda bir degiskeni 2 degiskene parcaliyoruz. unite fonksiyonunda da 2 tane degiskeni birlestiriyoruz. Stop words'leri kaldirmak istedigimiz icin seperate fonksiyonunu kullanmistik. Bu islemi yaptiktan sonra artik biz yine bigram elde etmek istedigimiz icin unite fonksiyonu ile 2 kelimeyi birlestiriyoruz.
+
+```{r}
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+
+bigrams_united
+```
+
+Simdi **n=3** oldugu duruma bakalim.
+
+```{r}
+benjonson %>%
+  unnest_tokens(trigram, text, token = "ngrams", n = 3) %>%
+  separate(trigram, c("word1", "word2", "word3"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word,
+         !word2 %in% stop_words$word,
+         !word3 %in% stop_words$word,
+         !word1 %in% mystopwords$word,
+         !word2 %in% mystopwords$word,
+         !word3 %in% mystopwords$word) %>%
+  count(word1, word2, word3, sort = TRUE)
+```
+
+## BIGRAM ANALIZI
+
+Ben kitaplarda gecen mekanlari merak ediyorum. Kitaplarda gecen ev isimlerine bakalim. Böylece olaylarin daha cok kimin evinde gectiğini analiz edebiliriz.
+
+```{r}
+bigrams_filtered %>%
+  filter(word2 == "house") %>%
+  count(title, word1, sort = TRUE)
+```
+The Merchant of Venice kitabinda Portia, Shylock gibi kişilerin evleri mevcut. Aynı zamanda diğer kitaplarda da bazi karakterlerin evleri olduğunu görebiliyoruz.
+
+**Bigramlar icin de tf-idf degerlerini hesaplayabiliriz.**
+
+```{r}
+bigram_tf_idf <- bigrams_united %>%
+  count(title, bigram) %>%
+  bind_tf_idf(bigram, title, n) %>%
+  arrange(desc(tf_idf))
+
+bigram_tf_idf
+```
+
+tf-idf isleminde gördüğümüz üzere mesela The Taming of the Shrew kitabi icin signior gremio kelimesi 14 kere gecmis. Terim frekansinin ve ters döküman frekansinin oranlarini görüyoruz. Ve bu ikisinin oranini görebiliyoruz.
+
+Simdi tüm kitaplari görsellestirelim.
+
+```{r}
+library(forcats)
+
+bigram_tf_idf %>%
+  group_by(title) %>%
+  slice_max(tf_idf, n = 10) %>%
+  ungroup() %>%
+  ggplot(aes(tf_idf, fct_reorder(bigram, tf_idf), fill = title)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~title, ncol = 2, scales = "free") +
+  labs(x = "tf-idf", y = NULL)
+```
+
+Bütün kitaplarda oran olarak en fazla çıkan 2şerli kelimeler burada gözüküyor. Örneğin The Taming of the Shrew kitabinda signior gremio, signior baptista, enter petruchio gibi kelimeler çıkmış. Daha çok isimlerin ön planda olduğu görülüyor.
+
+## BIGRAMLARDA DUYGU ANALIZI
+
+Burada olumsuzluk eklerini önceden alan kelimelere baktık. Mesela word1'e not denmiş. not bir olumsuzluk ekidir. Bunların frekanslarına bakıldıgında not a, not be, not so gibi kelimeler çıkmış.
+
+```{r}
+bigrams_separated %>%
+  filter(word1 == "not") %>%
+  count(word1, word2, sort = TRUE)
+```
+
+Burada AFINN sözlüğü kullanılabilir. Nasıl kullanılmış ona bakalım.
+
+```{r}
+AFINN <- get_sentiments("afinn")
+
+AFINN
+```
+
+Olumsuz kelimeleri aldık ve bigrams_seperated olarak word1'de not'ları filtreledik. Yani not olanları aldık. 2. kelimeleri bilmiyoruz. 2. kelimeleri AFINN sözlüğü ile eşleştirip burada bir skor elde etmek istiyoruz. Daha sonrasında da bunların frekanslarını alarak ve frekanslarını da gösterek bir veriseti oluşturmuş oluyoruz. 
+
+```{r}
+not_words <- bigrams_separated %>%
+  filter(word1 == "not") %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word2, value, sort = TRUE)
+
+not_words
+```
+
+Burada not eki ile olabilecek kelimeler var.
+
+
+not_words diye bir veriseti oluşturmuştuk. Daha sonra mutate fonksiyonu ile contribution yeni değişkeni oluşturulmuş ve nxskor şeklinde yani kelimenin frekansi ile afinn sözlüğünde geçen skoru birbiri ile çarpmış ve bir katkı puanı elde etmiş ve ilk 20 gözlemi aldık burada. Daha sonra mutate işlemi ile word2 değişkenini katkı puanına göre sıralattık.
+
+```{r}
+library(ggplot2)
+
+not_words %>%
+  mutate(contribution = n * value) %>%
+  arrange(desc(abs(contribution))) %>%
+  head(20) %>%
+  mutate(word2 = reorder(word2, contribution)) %>%
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "Sentiment value * number of occurrences",
+       y = "Words preceded by \"not\"")
+```
+
+Burada görmüş olduğumuz üzere love, worth, like, merry gibi kelimeler not eki ile olumlu bir izlenim verirken denied, burden, madness gibi kelimeler not eki ile olumsuz bir izlenim vermektedir.
+
+**Aynı zamanda diğer olumsuzluk eklerine de birlikte bakılmak istenildiğinde not, no, never, without gibi ekler alındı.**
+
+```{r}
+negation_words <- c("not", "no", "never", "without")
+
+negated_words <- bigrams_separated %>%
+  filter(word1 %in% negation_words) %>%
+  inner_join(AFINN, by = c(word2 = "word")) %>%
+  count(word1, word2, value, sort = TRUE)
+negated_words
+```
+
+```{r}
+library(ggplot2)
+
+negated_words %>%
+  mutate(contribution = n * value) %>%
+  arrange(desc(abs(contribution))) %>%
+  head(20) %>%
+  mutate(word2 = reorder(word2, contribution)) %>%
+  ggplot(aes(n * value, word2, fill = n * value > 0)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = "Sentiment value * number of occurrences",
+       y = "Words preceded by \"not\"")
+```
+
+Sadece not olumsuzluk eki yerine diğer olumsuzluk eklerini de analizimize dahil ettiimizde better, love, good, merry, trust, worth gibi kelimeler bu ekler ile olumlu bir izlenim verirken, die, swear,sad gibi kelimeler bu ekler ile olumsuz bir izlenim vermektedir.
+
+## AG ANALIZI
+
+```{r}
+library(igraph)
+
+# original counts
+bigram_counts
+```
+
+Ag analizinde daha net gözükmesi için tüm kelimeleri almak istemedik n'in 20'den büyük olması kosulunu koyduk.
+
+```{r}
+# filter for only relatively common combinations
+bigram_graph <- bigram_counts %>%
+  filter(n > 10) %>%
+  graph_from_data_frame()
+
+bigram_graph
+```
+
+Burada kelimeleri frekanslarına göre bir eşleştirme yapıyor ve buradan da olayların nasıl olduğu ile alakalı, ne içerdiğine, nelerle bağlantılı olduğu anlaşılabilir.
+
+```{r}
+library(ggraph)
+set.seed(2017)
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link() +
+  geom_node_point() +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1)
+```
+
+```{r}
+set.seed(2020)
+
+a <- grid::arrow(type = "closed", length = unit(.15, "inches"))
+
+ggraph(bigram_graph, layout = "fr") +
+  geom_edge_link(aes(edge_alpha = n), show.legend = FALSE,
+                 arrow = a, end_cap = circle(.07, 'inches')) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), vjust = 1, hjust = 1) +
+  theme_void()
+```
+
+Burada yukarıdaki görselin daha iyi görselleştirilmiş bir hali mevcut. Burada her bir nokta bir kelimeyi temsil ediyor ve oklar da bunların yönlerini belirtiyor ve bunların siyahlıkları grimsilikleri de frekanslarının daha fazla olduğunu belirtiyor.
+
+## KORELASYONLARA BAKMAK ISTERSEK:
+
+## HER BİR BÖLÜMÜN FREKANSINA VE KORELASYONUNA BAKMAK
+
+Burada Shakespeare'in The Merchant of Venice kitabini ele aldik ve daha sonra her bir satir numarasini yani indexleri bir tam sayi bölünmesi yapilarak (10'a bölerek) section degiskeni oluşturuldu. ve bu section değişkeninin 0'dan büyük olmasini istiyoruz. Ardından metni parçalıyoruz ve duraklama kelimelerini çıkarıyoruz.
+
+```{r}
+benjonson_section_words <- benjonson %>%
+  filter(title == "Epicoene; Or, The Silent Woman") %>%
+  mutate(section = row_number() %/% 10) %>%
+  filter(section > 0) %>%
+  unnest_tokens(word, text) %>%
+  filter(!word %in% stop_words$word) %>%
+  filter(!word %in% mystopwords$word)
+
+benjonson_section_words
+```
+
+Asagida, olusturmus oldugumuz veri seti icin pairwise_count ile kelime eşlerinin frekanslarını bulduk.
+
+```{r}
+library(widyr)
+
+# count words co-occuring within sections
+word_pairs <- benjonson_section_words %>%
+  pairwise_count(word, section, sort = TRUE)
+
+word_pairs
+```
+
+Burada nerissa portia 30 kez geçmiş. Aynı zamanda portia nerissa yani tam tersi olarak bakıldığında (bunlar çünkü kelime çiftleri birlikte kullanılmış) 30 kez kullanıldığını görüyoruz.
+
+
+Kelime eşlerine bakıldığında **1. değişken bond olduğunda** bond shylock, bond portia, bond bassanio gibi kelime eşleri varmış.
+
+
+```{r}
+word_pairs %>%
+  filter(item1 == "marry")
+```
+
+## PAIRWISE CORRELATION 
+
+Kategorik veri analizinde kullanılan phi'nin korelasyon katsayisi kullanılıyor.
+
+**words_cors:** shakespeare_section_words şeklinde bir veri setimiz vardı bunu kelimelere göre grupladık daha sonra frekansların 20'den büyük ve eşit olmasını istedik. Ardından pairwise_cor fonksiyonu ile kelimelerin, bölümlerin, 2li grupların korelasyonlarını elde ettik.
+
+
+```{r}
+word_cors <- benjonson_section_words %>%
+  group_by(word) %>%
+  filter(n() >= 20) %>%
+  pairwise_cor(word, section, sort = TRUE)
+
+word_cors
+```
+
+Burada item1, item2 şeklinde kelime çiftlerini gösteren kelimeler var ve correlation'da da her bir kelime ciftinin aldığı korelasyon değerleri var.
+
+**Aşağıda korelasyonları filtrelemek istedik. item1'i gobbo olan itemleri ver ve item2'de hangisi ile korele ona bakalım.**
+
+```{r}
+word_cors %>%
+  filter(item1 == "madam")
+```
+
+**Ardından burada 3 tane kelime seçtik. Her bir kelimenin diğer kelimeler ile birlikte korelasyonlarına bakalım**
+
+```{r}
+word_cors %>%
+  filter(item1 %in% c("marry", "cutbeard", "captain")) %>%
+  group_by(item1) %>%
+  slice_max(correlation, n = 10) %>%
+  ungroup() %>%
+  mutate(item2 = reorder(item2, correlation)) %>%
+  ggplot(aes(item2, correlation)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~ item1, scales = "free") +
+  coord_flip()
+```
+
+Baktigimizda bond kelimesi ile birlikte korele olan ifadeleri aldigimizda shylock,judge,hear,speak,ducats gibi kelimeler var. Her bir kelimenin farklı kelimelerle olan ilişkilerini buradan anlayabiliriz.
+
+## KORELASYONLARA GÖRE AĞ GRAFİĞİ
+
+```{r}
+set.seed(2016)
+
+word_cors %>%
+  filter(correlation > .15) %>%
+  graph_from_data_frame() %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(edge_alpha = correlation), show.legend = FALSE) +
+  geom_node_point(color = "lightblue", size = 5) +
+  geom_node_text(aes(label = name), repel = TRUE) +
+  theme_void()
+```
+
+Burada gördüğümüz üzere korelasyonlara göre bir ağ analizi elde edildi. 
+
+## DÜZENLİ OLMAYAN METİN FORMATLARINI DÜZENLİ HALE GETİRME
+
+## DÖKÜMAN TERIM MATRISI
+
+Bir yapı bu. Bu yapıyı düzenli hale getireceğiz. 
+
+## DÖKÜMAN TERIM OBJESİNİ DÜZENLI HALE GETIRME
+
+Önce tm kütüphanesi yüklendi. Ardından ihtiyacımız olan bir data var.
+
+```{r}
+library(tm)
+
+benjonson_dtm <- benjonson %>%
+  unnest_tokens(word, text) %>%
+  count(title, word) %>%
+  cast_dtm(title, word, n)
+
+benjonson_dtm
+```
+
+Bu döküman terim matrisi 3 dökümandan oluşmuş ve 6550 terimden oluşmuş. 
+
+**Seyreklik (Sparsity)** dediğimiz bir durum var. Döküman terim matrisi 1'lerden ve 0'lardan oluşuyor. Ne kadar çok 0 varsa o kadar fazla elimizde seyreklik olmuş oluyor.
+
+**Non-/sparse entries** 'de ilk olan kısım bize non sparse yani seyrek olmayan terimleri gösteriyor ve bu döküman terim matrisinin **seyreklik oranı** da %50'ymiş.
+
+**Maximal term length** maksimum terim uzunluğudur.
+
+**Weighting** Burada terim frekansı ön plandadır diyor.
+
+**terms fonksiyonu** ile bu data icindeki terimleri görebiliriz.
+
+```{r}
+terms <- Terms(benjonson_dtm)
+head(terms)
+```
+
+Döküman terim matrisi farklı bir yapıda olduğu için bunun düzenli hale getirilmesi gerekiyor.
+
+```{r}
+library(dplyr)
+library(tidytext)
+
+benjonson_td <- tidy(benjonson_dtm)
+benjonson_td
+```
+
+Verimizi böyle bir formata getirdikten sonra **duygu analizi** yapabiliriz. Bunu da yine tidytext kütüphanesi içerisindeki duygu sözlükleri ile yapabiliriz.
+
+```{r}
+benjonson_sentiments <- benjonson_td %>%
+  inner_join(get_sentiments("bing"), by = c(term = "word"))
+benjonson_sentiments
+```
+
+Bu çıktıda her bir terime karşılık gelen duygular yer almaktadır. Bu duygu analizini görselleştirelim.
+
+```{r}
+library(ggplot2)
+
+benjonson_sentiments %>%
+  count(sentiment, term, wt = count) %>%
+  ungroup() %>%
+  filter(n >= 40) %>%
+  mutate(n = ifelse(sentiment == "negative", -n, n)) %>%
+  mutate(term = reorder(term, n)) %>%
+  ggplot(aes(n, term, fill = sentiment)) +
+  geom_col() +
+  labs(x = "Contribution to sentiment", y = NULL)
+```
+
+Burada baktığımızda well, good, love, master, like gibi kelimelerin pozitif duygular olduğunu poor, sly, devil gibi kelimelerin ise negatif duygular içerdiğini görüyoruz.
+
+## TOPIC MODELLING (KONU MODELLEMESI)
+
+
+Konu modellemesi örnegin bir gazetenin her bir sayfasinda farkli konulardan olan haberler var. Elimizde pek cok döküman oldugunu ve dökümanların farklı konular icerdigini düsünelim. Konu modellemesi bu dökümanların ayrılmasında kullanılıyor ve düzgünce bir sekilde ayırmaya calisiyoruz. Bu yöntem nümerik dataları kümeleme yöntemine benziyor. 
+
+## LDA YÖNTEMİ
+
+Konu modellemesi icin LDA yaygın bbir algoritmadır. LDA'in 2 tane prensibi vardır.
+
+Elimizdeki bir metin bir konuyu içermelidir. Örneğin elimizde sporla alakalı bir metin olsun. Bunun ekonomi konusuna girme olasılıgı cok düsüktür. Ekonomiyi de ilgilendiriyorsa o zaman ekonomi icine girebilir ama spor ekonomiden bagimsiz oldugu icin o döküman spor konusuna ait olmalıdır.
+
+Dökümanlar bir konuya ait oluyorsa, konular da kendi iclerinde onlari temsil eden kelimelere ait olmalıdır.
+
+**UYGULAMA** 6 tane kitabimiz var. Yani 6 tane dökümanimiz var. Biz bu 6 dökümani siniflandirmak istiyoruz. Yani dogru bir sekilde tahmin etmek istiyoruz. Hangi sayfa hangi kitaba ait bilmiyoruz. Bunu algoritma yöntemiyle bulabilir miyiz?
+
+
+Burada kitaplarin isimlerini tanimladik daha sonra gutenbergr paketi ile kitaplari cagirdik. 
+
+```{r}
+benjonson<- gutenberg_download(c(4011,49461,4039))
+
+title<-benjonson_eserleri %>%
+  select(gutenberg_id, title)
+
+books <- benjonson %>% 
+  inner_join(title, by = "gutenberg_id")
+
+```
+
+
+```{r}
+library(stringr)
+
+# divide into documents, each representing one chapter
+by_chapter <- books %>%
+  group_by(title) %>%
+  mutate(chapter = cumsum(str_detect(
+    text, regex("^act ", ignore_case = TRUE)
+  ))) %>%
+   filter(chapter > 0) %>%
+  ungroup() %>%
+  unite(document, title, chapter)
+
+# split into words
+by_chapter_word <- by_chapter %>%
+  unnest_tokens(word, text)
+
+# find document-word counts
+word_counts <- by_chapter_word %>%
+  anti_join(stop_words) %>%
+  anti_join(mystopwords) %>%
+  count(document, word, sort = TRUE) %>%
+  ungroup()
+word_counts
+```
+
+Burada baktigimizda örnegin The Merchant of Venice'in 5. sahnesinde Launcelot kelimesi 44 kere gecmis.
+
+**Burada düzenli olan bir metin formati var. Biz bunu döküman terim matrisine cevirmek istiyoruz.**
+
+```{r}
+chapters_dtm <- word_counts %>%
+  cast_dtm(document, word, n)
+chapters_dtm
+```
+
+Baktigimizda bu veri seti icerisinde 51 tane döküman oldugunu ve 6024 tane kelime olduğunu görüyoruz. Matrisimizin seyrekliği %95 imis. 
+
+**Simdi bu matrisi LDA fonksiyonuna sokuyoruz fakat elimizde 3 kitap vardi. Dolayisiyla 3 farkli konum olmasini istiyorum.** LDA algoritmasinda bir k argümanı mevcut. k=3 oldugu zaman LDA 3 konuya göre modelliyor. k'yı arttırdıkça konu sayısı artıyor.
+
+
+```{r}
+library(topicmodels)
+chapters_lda <- LDA(chapters_dtm, k = 3, control = list(seed = 1234))
+chapters_lda
+```
+
+**Kelime konu olasiliklarina bakmak icin beta olasiligina bakmaliyiz. Burada tidy fonksiyonu ile beta olasiliklarini görebiliyoruz.** 
+
+**beta** her bir konuda her bir kelimenin olasiligini temsil eder. Kelime konu olasiligina bakmak istediğimizde beta'ya bakmaliyiz.
+
+Konu degiskeninde 1, 2 ve 3 seklinde 3 kategorimiz var. term'de ise bu konuda gecen kelimeleri bize veriyor. beta bize 1., 2. ve 3. konular icin örnegin olivia kelimesinin gecme olasılıgını bize veriyor.
+
+```{r}
+chapter_topics <- tidy(chapters_lda, matrix = "beta")
+chapter_topics
+```
+
+**Simdi dplyr ile top_n() fonksiyonunu kullanarak ilk 10 gözlemi görebiliriz. ggplot2 ile de bunu görsellestirelim.**
+
+```{r}
+top_terms <- chapter_topics %>%
+  group_by(topic) %>%
+  slice_max(beta, n = 10) %>% 
+  ungroup() %>%
+  arrange(topic, -beta)
+
+top_terms
+```
+
+Burada Toby kelimesi 1. konu icin 0.02 olasiligina sahipmis.
+
+```{r}
+library(ggplot2)
+
+top_terms %>%
+  mutate(term = reorder_within(term, beta, topic)) %>%
+  ggplot(aes(beta, term, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  scale_y_reordered()
+```
+
+Burada her bir konuda en fazla olasiliklari temsil eden kelimeler var. Burada cıkan kelimeler aslinda 3 kitapta en cok gecen kelimeler. Her bir kitapta kendine özel kelimeler bunlar.
+
+## DÖKUMAN BASINA SINIFLAMA OLASILIGI
+
+Bizim döküman konu olasiligimiz **gamma**dir. Asagida her bir dökümanin 1'den 3. konuya kadar olan olasiliklarini bize gösteriyor.  
+
+```{r}
+chapters_gamma <- tidy(chapters_lda, matrix = "gamma")
+chapters_gamma
+```
+
+Biz eserlerimizi bölümlere parçalamıştık. Yani bölümleri parçalamıştık.
+
+```{r}
+chapters_gamma <- chapters_gamma %>%
+  separate(document, c("title", "chapter"), sep = "_", convert = TRUE)
+
+chapters_gamma
+```
+
+```{r}
+chapter_classifications <- chapters_gamma %>%
+  group_by(title, chapter) %>%
+  slice_max(gamma) %>%
+  ungroup()
+chapter_classifications
+```
+
+Yukarida gama olasiliklarina göre bölümlere bir baktik. Burada da her bir olasiliklara göre eserlerin en iyi gözlemlerine bakiyor.
+
+```{r}
+book_topics <- chapter_classifications %>%
+  count(title, topic) %>%
+  group_by(title) %>%
+  slice_max(n, n = 1) %>% 
+  ungroup() %>%
+  transmute(consensus = title, topic)
+
+chapter_classifications %>%
+  inner_join(book_topics, by = "topic") %>%
+  filter(title != consensus)
+```
+
+Yukarida yaptigimiz islemleri dogru bir sekilde siniflandirdik mi diye kontrol etmeliyiz. Yukarida gördüğümüz üzere The Merchant of Venice'in 5. chapter'ina baktigimizda bu konu 1'e aitmis ve %54lük bir olasilikla varmis ve bunun karsılıgı da The Taming of the Shrew'e karsılık geliyormuş.
+
+**augment fonksiyonu** ile LDA islemi yapmistik ve döküman terim matrisine cevirmistik her bir bölümü. Asagida bunlari karsilastiracagiz. 
+
+```{r}
+assignments <- augment(chapters_lda, data = chapters_dtm)
+assignments
+```
+
+```{r}
+assignments <- assignments %>%
+  separate(document, c("title", "chapter"), 
+           sep = "_", convert = TRUE) %>%
+  inner_join(book_topics, by = c(".topic" = "topic"))
+
+assignments
+```
+
+```{r}
+library(scales)
+
+assignments %>%
+  count(title, consensus, wt = count) %>%
+  mutate(across(c(title, consensus), ~str_wrap(., 20))) %>%
+  group_by(title) %>%
+  mutate(percent = n / sum(n)) %>%
+  ggplot(aes(consensus, title, fill = percent)) +
+  geom_tile() +
+  scale_fill_gradient2(high = "darkred", label = percent_format()) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid = element_blank()) +
+  labs(x = "Book words were assigned to",
+       y = "Book words came from",
+       fill = "% of assignments")
+```
+
+**Her bir kitabi dogru bir sekilde siniflandirdik mi?**
+
+**y ekseninde** kitaptaki kelimelerin nereden geldikleri yani bizim gercek olan degerlerimiz (kitaplarimiz) bunlar. 
+
+**x ekseninde** de kitaplardaki kelimelerin nereye atandiklari gösteriliyor.
+
+Burada baktigimizda 
+
+**The Merchant of Venice** kitabinin The Taming of the Shrew ve Twelfh Night; Or, What You Will kitabi ile kücük bir benzerligi olduğu görülüyor.
+
+**The Taming of The Shrew**  kitabi da diger 2 kitap ile benzer olarak gözlemlenmiş.
+
+**Twelfh Night; Or, What You Will** kitabi da The Taming of The Shrew kitabi ile benzer olarak gözlemlenmiş.
+
+Biz trajikomik 3 eseri ele almıştık. Dolayısıyla buradan yazarın trajikomik eserlerinde genel olarak aynı tarzda ve benzer kelime yapılarına sıklıkla yer vererek eserlerini yazdığı yorumu yapılabilir. Eserlerin farklı yanlari olsa bile birbirine benzer yanları olduğu gerçeği de korelasyon grafiğinden rahatlıkla anlaşılıyor.
+
+3 farklı eser kendisi ile eşleşmiş bunun dışında bazı kitaplarin da bazi kitaplar ile önemli sayilacak bir  benzerliği olduğu görülüyor.
+
+**Yanlış eşleştirilen kitaplar ve kelimeler**
+
+```{r}
+wrong_words <- assignments %>%
+  filter(title != consensus)
+
+wrong_words
+```
+
+```{r}
+wrong_words %>%
+  count(title, consensus, term, wt = count) %>%
+  ungroup() %>%
+  arrange(desc(n))
+```
+
+
+
